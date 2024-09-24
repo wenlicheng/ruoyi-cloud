@@ -1,0 +1,151 @@
+# version : '3.8'  # 指定 Docker Compose 文件的版本
+services:  # 定义服务
+
+  ruoyi-nacos:  # 服务名称：Nacos
+    container_name: ruoyi-nacos  # 容器名称
+    image: nacos/nacos-server  # 使用的镜像
+    build:  # 构建配置
+      context: ./nacos  # 指定构建上下文路径
+    environment:  # 环境变量
+      - MODE=standalone  # 设置 Nacos 工作模式为独立模式
+    volumes:  # 挂载卷
+      - ./nacos/logs/:/home/nacos/logs  # 持久化日志
+      - ./nacos/conf/application.properties:/home/nacos/conf/application.properties  # 配置文件挂载
+    ports:  # 端口映射
+      - "8848:8848"  # Nacos 默认服务端口
+      - "9848:9848"  # Nacos 监听端口
+      - "9849:9849"  # Nacos 控制台端口
+    depends_on:  # 依赖关系
+      - ruoyi-mysql  # 依赖 MySQL 服务
+
+  ruoyi-mysql:  # 服务名称：MySQL
+    container_name: ruoyi-mysql  # 容器名称
+    image: mysql:5.7  # 使用的 MySQL 镜像版本
+    build:  # 构建配置
+      context: ./mysql  # 构建上下文路径
+    ports:  # 端口映射
+      - "3306:3306"  # MySQL 默认端口
+    volumes:  # 挂载卷
+      - ./mysql/conf:/etc/mysql/conf.d  # 自定义 MySQL 配置
+      - ./mysql/logs:/logs  # 持久化日志
+      - ./mysql/data:/var/lib/mysql  # 数据持久化
+    command: [  # 启动命令
+      'mysqld',  # 启动 MySQL 服务
+      '--innodb-buffer-pool-size=80M',  # 设置 InnoDB 缓冲池大小
+      '--character-set-server=utf8mb4',  # 设置字符集为 utf8mb4
+      '--collation-server=utf8mb4_unicode_ci',  # 设置排序规则
+      '--default-time-zone=+8:00',  # 设置时区
+      '--lower-case-table-names=1'  # 设置表名不区分大小写
+    ]
+    environment:  # 环境变量
+      MYSQL_DATABASE: 'ry-cloud'  # 创建的数据库名称
+      MYSQL_ROOT_PASSWORD: password  # MySQL root 用户的密码
+
+  ruoyi-redis:  # 服务名称：Redis
+    container_name: ruoyi-redis  # 容器名称
+    image: redis  # 使用的 Redis 镜像
+    build:  # 构建配置
+      context: ./redis  # 构建上下文路径
+    ports:  # 端口映射
+      - "6379:6379"  # Redis 默认端口
+    volumes:  # 挂载卷
+      - ./redis/conf/redis.conf:/home/ruoyi/redis/redis.conf  # Redis 配置文件
+      - ./redis/data:/data  # 数据持久化
+    command: redis-server /home/ruoyi/redis/redis.conf  # 启动 Redis 服务并指定配置文件
+
+  ruoyi-nginx:  # 服务名称：Nginx
+    container_name: ruoyi-nginx  # 容器名称
+    image: nginx  # 使用的 Nginx 镜像
+    build:  # 构建配置
+      context: ./nginx  # 构建上下文路径
+    ports:  # 端口映射
+      - "80:80"  # Nginx 默认 HTTP 端口
+    volumes:  # 挂载卷
+      - ./nginx/html/dist:/home/ruoyi/projects/ruoyi-ui  # 前端文件
+      - ./nginx/conf/nginx.conf:/etc/nginx/nginx.conf  # Nginx 配置文件
+      - ./nginx/logs:/var/log/nginx  # Nginx 日志
+      - ./nginx/conf.d:/etc/nginx/conf.d  # Nginx 额外配置文件
+    depends_on:  # 依赖关系
+      - ruoyi-gateway  # 依赖 Gateway 服务
+    links:  # 连接到其他服务
+      - ruoyi-gateway
+
+  ruoyi-gateway:  # 服务名称：网关
+    container_name: ruoyi-gateway  # 容器名称
+    build:  # 构建配置
+      context: ./ruoyi/gateway  # 构建上下文路径
+      dockerfile: dockerfile  # 指定 Dockerfile
+    ports:  # 端口映射
+      - "8080:8080"  # 网关服务端口
+    depends_on:  # 依赖关系
+      - ruoyi-redis  # 依赖 Redis 服务
+    links:  # 连接到其他服务
+      - ruoyi-redis
+
+  ruoyi-auth:  # 服务名称：认证
+    container_name: ruoyi-auth  # 容器名称
+    build:  # 构建配置
+      context: ./ruoyi/auth  # 构建上下文路径
+      dockerfile: dockerfile  # 指定 Dockerfile
+    ports:  # 端口映射
+      - "9200:9200"  # 认证服务端口
+    depends_on:  # 依赖关系
+      - ruoyi-redis  # 依赖 Redis 服务
+    links:  # 连接到其他服务
+      - ruoyi-redis
+
+  ruoyi-modules-system:  # 服务名称：系统模块
+    container_name: ruoyi-modules-system  # 容器名称
+    build:  # 构建配置
+      context: ./ruoyi/modules/system  # 构建上下文路径
+      dockerfile: dockerfile  # 指定 Dockerfile
+    ports:  # 端口映射
+      - "9201:9201"  # 系统模块端口
+    depends_on:  # 依赖关系
+      - ruoyi-redis  # 依赖 Redis 服务
+      - ruoyi-mysql  # 依赖 MySQL 服务
+    links:  # 连接到其他服务
+      - ruoyi-redis
+      - ruoyi-mysql
+
+  ruoyi-modules-gen:  # 服务名称：代码生成模块
+    container_name: ruoyi-modules-gen  # 容器名称
+    build:  # 构建配置
+      context: ./ruoyi/modules/gen  # 构建上下文路径
+      dockerfile: dockerfile  # 指定 Dockerfile
+    ports:  # 端口映射
+      - "9202:9202"  # 代码生成模块端口
+    depends_on:  # 依赖关系
+      - ruoyi-mysql  # 依赖 MySQL 服务
+    links:  # 连接到其他服务
+      - ruoyi-mysql
+
+  ruoyi-modules-job:  # 服务名称：定时任务模块
+    container_name: ruoyi-modules-job  # 容器名称
+    build:  # 构建配置
+      context: ./ruoyi/modules/job  # 构建上下文路径
+      dockerfile: dockerfile  # 指定 Dockerfile
+    ports:  # 端口映射
+      - "9203:9203"  # 定时任务模块端口
+    depends_on:  # 依赖关系
+      - ruoyi-mysql  # 依赖 MySQL 服务
+    links:  # 连接到其他服务
+      - ruoyi-mysql
+
+  ruoyi-modules-file:  # 服务名称：文件管理模块
+    container_name: ruoyi-modules-file  # 容器名称
+    build:  # 构建配置
+      context: ./ruoyi/modules/file  # 构建上下文路径
+      dockerfile: dockerfile  # 指定 Dockerfile
+    ports:  # 端口映射
+      - "9300:9300"  # 文件管理模块端口
+    volumes:  # 挂载卷
+      - ./ruoyi/uploadPath:/home/ruoyi/uploadPath  # 文件上传路径挂载
+
+  ruoyi-visual-monitor:  # 服务名称：可视化监控
+    container_name: ruoyi-visual-monitor  # 容器名称
+    build:  # 构建配置
+      context: ./ruoyi/visual/monitor  # 构建上下文路径
+      dockerfile: dockerfile  # 指定 Dockerfile
+    ports:  # 端口映射
+      - "9100:9100"  # 监控服务端口
